@@ -1,5 +1,7 @@
 # Canvas Cards
 
+Repository: [knink-owo/obsidian-canvas-cards](https://github.com/knink-owo/obsidian-canvas-cards)
+
 Turn any Canvas text node into a **card**: the canvas only shows a clickable title
 (optionally button-styled), and clicking the title opens a popup with the full,
 rendered Markdown body. The body stays hidden inside the `.canvas` file until you
@@ -66,7 +68,8 @@ open it.
 
 ### Manually
 
-1. Download `main.js`, `manifest.json` and `styles.css` from the latest release.
+1. Download `main.js`, `manifest.json` and `styles.css` from the
+   [latest release](https://github.com/knink-owo/obsidian-canvas-cards/releases/latest).
 2. Create `<your-vault>/.obsidian/plugins/canvas-cards/` and put the three files
    there.
 3. Reload Obsidian and enable **Canvas Cards** in *Settings → Community plugins*.
@@ -162,7 +165,8 @@ a card only flips `card` to `false` and keeps `body`. Advanced Canvas' own field
 
 ## Support
 
-Report bugs and feature requests in the plugin's GitHub repository issue tracker.
+Report bugs and feature requests in the
+[issue tracker](https://github.com/knink-owo/obsidian-canvas-cards/issues).
 Please include the Obsidian version, the plugin version and, when possible, a minimal
 `.canvas` file that shows the problem.
 

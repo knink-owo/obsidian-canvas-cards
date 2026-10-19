@@ -5,6 +5,7 @@
 	"minAppVersion": "1.14.4",
 	"description": "Canvas cards show only a clickable title; click to open a popup with the full body content.",
 	"author": "ink14",
+	"authorUrl": "https://github.com/knink-owo",
 	"isDesktopOnly": true
 }
 
