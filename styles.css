@@ -1,0 +1,370 @@
+/* ==========================================================================
+   Canvas Cards — canvas appearance
+   The card itself stays a native Canvas text node: a CSS class is added to
+   `.canvas-node` plus one small corner button, so dragging/zooming/editing
+   keep the native behaviour.
+   ========================================================================== */
+
+.canvas-node.canvas-cards-card .canvas-node-container {
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 10px;
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+	overflow: hidden;
+}
+
+/* A node with an explicit Canvas color keeps its color (D12). Canvas exposes
+   the color through `--canvas-color` plus a `mod-canvas-color-*` class; without
+   a color the variable is a grey sentinel, so only colored nodes use it. */
+.canvas-node.canvas-cards-card[class*='mod-canvas-color'] .canvas-node-container {
+	background: var(--canvas-color);
+}
+
+.canvas-node.canvas-cards-card:hover .canvas-node-container {
+	border-color: var(--interactive-accent);
+}
+
+.canvas-node.canvas-cards-card .canvas-node-content {
+	overflow: hidden;
+}
+
+.canvas-node.canvas-cards-card .markdown-preview-sizer,
+.canvas-node.canvas-cards-card .markdown-preview-view {
+	padding: 0 !important;
+	min-height: 0 !important;
+}
+
+.canvas-node.canvas-cards-card .markdown-preview-section {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	height: 100%;
+	padding: 8px 14px;
+	text-align: center;
+	font-weight: 600;
+	font-size: 15px;
+	line-height: 1.3;
+}
+
+.canvas-node.canvas-cards-card .markdown-preview-pusher {
+	display: none;
+}
+
+.canvas-node.canvas-cards-card .canvas-node-content-blocker {
+	cursor: pointer;
+}
+
+/* Button look (settings: appearance = button) */
+.canvas-node.canvas-cards-card-button .canvas-node-container {
+	background: var(--interactive-normal);
+	border-radius: 8px;
+	box-shadow: none;
+}
+
+.canvas-node.canvas-cards-card-button .canvas-node-container:hover {
+	background: var(--interactive-hover);
+}
+
+.canvas-node.canvas-cards-card-button .markdown-preview-section {
+	font-weight: 600;
+	font-size: 14px;
+	letter-spacing: 0.01em;
+}
+
+/* Keep the native editor readable while the node is being edited. */
+.canvas-node.canvas-cards-card.is-editing .canvas-node-container {
+	background: var(--background-primary);
+}
+
+/* Corner button — the one injected element; opens the dialog. It fades in on
+   hover/focus, and stays visible when the trigger setting is "icon only". */
+.canvas-node.canvas-cards-card > .canvas-cards-corner {
+	position: absolute;
+	top: 6px;
+	right: 6px;
+	z-index: 5;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
+	padding: 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	background: var(--background-primary);
+	color: var(--text-muted);
+	cursor: pointer;
+	opacity: 0;
+	transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease;
+}
+
+.canvas-node.canvas-cards-card:hover > .canvas-cards-corner,
+.canvas-node.canvas-cards-card.is-focused > .canvas-cards-corner,
+.canvas-node.canvas-cards-icon-trigger > .canvas-cards-corner {
+	opacity: 1;
+}
+
+.canvas-node.canvas-cards-card > .canvas-cards-corner:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.canvas-node.canvas-cards-card > .canvas-cards-corner svg {
+	width: 13px;
+	height: 13px;
+}
+
+.canvas-node.canvas-cards-card.is-editing > .canvas-cards-corner {
+	display: none;
+}
+
+/* ==========================================================================
+   Card dialog
+   ========================================================================== */
+
+.modal.canvas-cards-modal {
+	width: min(760px, 92vw);
+	max-width: min(760px, 92vw);
+}
+
+.modal.canvas-cards-modal.canvas-cards-fullscreen {
+	width: 92vw;
+	max-width: 92vw;
+	height: 92vh;
+	max-height: 92vh;
+}
+
+.canvas-cards-modal .modal-content,
+.canvas-cards-modal-content {
+	display: flex;
+	flex-direction: column;
+	padding: 0;
+	min-height: 320px;
+}
+
+.canvas-cards-modal.canvas-cards-fullscreen .modal-content {
+	height: 100%;
+}
+
+.canvas-cards-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 10px 12px;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+input.canvas-cards-title-input {
+	flex: 1 1 auto;
+	min-width: 0;
+	border: none;
+	background: transparent;
+	box-shadow: none;
+	font-size: 1.1em;
+	font-weight: 600;
+	color: var(--text-normal);
+	padding: 4px 6px;
+	border-radius: 6px;
+}
+
+input.canvas-cards-title-input:focus {
+	outline: none;
+	box-shadow: none;
+	background: var(--background-modifier-hover);
+}
+
+.canvas-cards-toolbar {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	flex: 0 0 auto;
+}
+
+.canvas-cards-icon-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 30px;
+	height: 30px;
+	padding: 0;
+	border: none;
+	background: transparent;
+	border-radius: 6px;
+	color: var(--text-muted);
+	cursor: pointer;
+}
+
+.canvas-cards-icon-button:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.canvas-cards-body {
+	flex: 1 1 auto;
+	overflow: auto;
+	padding: 18px 22px;
+	min-height: 240px;
+}
+
+.canvas-cards-modal.canvas-cards-fullscreen .canvas-cards-body {
+	max-height: none;
+}
+
+.canvas-cards-editor {
+	display: none;
+	flex: 1 1 auto;
+	width: 100%;
+	min-height: 260px;
+	margin: 0;
+	padding: 18px 22px;
+	border: none;
+	border-radius: 0;
+	resize: none;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	font-family: var(--font-monospace);
+	font-size: 0.92em;
+	line-height: 1.55;
+	box-shadow: none;
+}
+
+.canvas-cards-editor:focus {
+	outline: none;
+	box-shadow: none;
+}
+
+.canvas-cards-modal.canvas-cards-edit-mode .canvas-cards-body {
+	display: none;
+}
+
+.canvas-cards-modal.canvas-cards-edit-mode .canvas-cards-editor {
+	display: block;
+}
+
+.canvas-cards-empty {
+	color: var(--text-muted);
+	text-align: center;
+	padding: 48px 0 16px;
+}
+
+.canvas-cards-start-editing {
+	display: block;
+	margin: 0 auto;
+}
+
+.canvas-cards-status {
+	flex: 0 0 auto;
+	min-height: 22px;
+	padding: 4px 14px;
+	border-top: 1px solid var(--background-modifier-border);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+/* The dialog toolbar already carries its own close button. */
+.modal.canvas-cards-modal .modal-header-button.mod-raised {
+	display: none;
+}
+
+/* ==========================================================================
+   Cover thumbnail
+   The first image embed of the body becomes the card cover; the title sits on
+   a dark gradient so it stays readable on light and dark images alike.
+   ========================================================================== */
+
+.canvas-node.canvas-cards-card.canvas-cards-has-thumb .canvas-node-container {
+	background-image: linear-gradient(180deg, rgba(0, 0, 0, 0.04) 0%, rgba(0, 0, 0, 0.58) 100%),
+		var(--canvas-cards-thumb);
+	background-size: cover;
+	background-position: center;
+	border-color: transparent;
+}
+
+.canvas-node.canvas-cards-card.canvas-cards-has-thumb .markdown-preview-section {
+	align-items: flex-end;
+	justify-content: flex-start;
+	padding: 10px 14px;
+	color: #fff;
+	text-align: left;
+	text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85), 0 0 12px rgba(0, 0, 0, 0.5);
+}
+
+.canvas-node.canvas-cards-card.canvas-cards-has-thumb.is-editing .canvas-node-container {
+	background-image: none;
+}
+
+/* ==========================================================================
+   Card body search
+   ========================================================================== */
+
+.modal.canvas-cards-search-modal {
+	width: min(620px, 92vw);
+	max-width: min(620px, 92vw);
+}
+
+.canvas-cards-search-content {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 12px 14px 14px;
+}
+
+input.canvas-cards-search-input {
+	width: 100%;
+	padding: 8px 10px;
+	font-size: 1em;
+	border-radius: 6px;
+}
+
+.canvas-cards-search-status {
+	min-height: 16px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.canvas-cards-search-results {
+	display: flex;
+	flex-direction: column;
+	max-height: 52vh;
+	overflow: auto;
+}
+
+.canvas-cards-search-result {
+	padding: 8px 10px;
+	border: 1px solid transparent;
+	border-radius: 6px;
+	cursor: pointer;
+}
+
+.canvas-cards-search-result.is-selected {
+	background: var(--background-modifier-hover);
+	border-color: var(--background-modifier-border);
+}
+
+.canvas-cards-search-result-title {
+	font-weight: 600;
+}
+
+.canvas-cards-search-result-meta {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.canvas-cards-search-result-snippet {
+	margin-top: 2px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.canvas-cards-search-empty {
+	padding: 18px 0;
+	color: var(--text-muted);
+	text-align: center;
+}
+
+
+/* The body is re-rendered into a fresh child so a stale async render cannot clear newer content. */
+.canvas-cards-render-target { display: contents; }

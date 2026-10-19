@@ -1,0 +1,19 @@
+# Build output
+main.js
+*.map
+
+# Dependencies
+node_modules/
+
+# Plugin data (created at runtime)
+data.json
+
+# Logs and OS noise
+*.log
+.DS_Store
+Thumbs.db
+
+# Local research artifacts, scratch vaults and CDP tooling
+.tmp-research/
+# Local pnpm store used by the devkit sandbox
+.pnpm-store/
