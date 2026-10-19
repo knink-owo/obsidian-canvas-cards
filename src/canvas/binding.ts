@@ -35,7 +35,7 @@ export class CanvasBinding {
 	private readonly plugin: CanvasCards;
 	private wrapperEl: HTMLElement | null = null;
 	private observer: MutationObserver | null = null;
-	private frame: number | null = null;
+	private applyTimer: number | null = null;
 	private readonly nodesByEl = new Map<HTMLElement, CanvasNodeLike>();
 	private readonly classedEls = new Set<HTMLElement>();
 	private readonly cornerButtons = new Set<HTMLButtonElement>();
@@ -183,20 +183,21 @@ export class CanvasBinding {
 		this.view = null;
 	}
 
-	private scheduleApply(): void {
-		if (this.frame !== null) return;
-		this.frame = window.requestAnimationFrame(() => {
-			this.frame = null;
+	/** Coalesces repeated requests into one apply(). Timer based on purpose. */
+	scheduleApply(): void {
+		if (this.applyTimer !== null) return;
+		this.applyTimer = window.setTimeout(() => {
+			this.applyTimer = null;
 			this.apply();
-		});
+		}, 30);
 	}
 
 	private detachObserver(): void {
 		this.observer?.disconnect();
 		this.observer = null;
-		if (this.frame !== null) {
-			window.cancelAnimationFrame(this.frame);
-			this.frame = null;
+		if (this.applyTimer !== null) {
+			window.clearTimeout(this.applyTimer);
+			this.applyTimer = null;
 		}
 		this.wrapperEl = null;
 	}

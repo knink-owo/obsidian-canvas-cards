@@ -127,7 +127,9 @@ export type MessageKey = keyof typeof EN;
 
 function usesChinese(): boolean {
 	const locale = (moment.locale() || '').toLowerCase();
-	if (locale.startsWith('zh')) return true;
+	// Obsidian sets moment's locale from the app language; navigator.language is
+	// the OS locale, so only use it as a fallback when moment has none.
+	if (locale) return locale.startsWith('zh');
 	const nav = typeof navigator === 'undefined' ? '' : (navigator.language || '').toLowerCase();
 	return nav.startsWith('zh');
 }

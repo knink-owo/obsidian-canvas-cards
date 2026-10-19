@@ -15,7 +15,9 @@ to be observed in a running Obsidian instance; see "Verification" below.
 ## Architecture
 
 - `src/main.ts` — plugin entry point. The default export extends `Plugin`; `onload`
-  registers commands, events and the settings tab.
+  registers commands, events and the settings tab. Click interception and the
+  canvas refresh hook use capture listeners registered per document (main window and
+  each pop-out window; see "Canvas DOM sync" below).
 - `src/settings.ts` — settings interface, `DEFAULT_SETTINGS` and the settings tab.
 - `src/canvas/` — Canvas integration: `internals.ts` (minimal private types/helpers),
   `card.ts` (data model), `binding.ts` (per-leaf DOM sync), `card-index.ts` (card
@@ -59,11 +61,13 @@ usage changes.
 Allowed accesses (only from `src/canvas/**`, never from `ui/**`):
 
 - `workspace.getLeavesOfType("canvas")` → `leaf.view.canvas` (Canvas instance).
+- `leaf.loadIfDeferred()` — awaited before reading `leaf.view.canvas` when the
+  canvas view was restored lazily (deferred views).
 - `canvas.nodes` (Map), `canvas.selection`, `canvas.selectOnly(node)`,
   `canvas.zoomToSelection()`, `canvas.createTextNode(...)`, `canvas.requestSave()`,
-  `canvas.wrapperEl`.
+  `canvas.posFromClient(point)`, `canvas.wrapperEl`.
 - `node.nodeEl`, `node.getData()`, `node.setData()`, `node.setText()`,
-  `node.isEditing`, `node.x/y/width/height`.
+  `node.attach()`, `node.render()`, `node.isEditing`, `node.x/y/width/height`.
 - Text-node DOM class names used only for hit-testing/CSS: `.canvas-node`,
   `.canvas-node-container`, `.canvas-node-content`, `.canvas-node-content-blocker`,
   `.canvas-node-placeholder`, and states `is-editing` / `is-focused` / `is-selected`
@@ -83,6 +87,24 @@ Constraints:
   or `canvas.createTextNode()`.
 - Keep all private access in `src/canvas/internals.ts` (types + helpers) so future
   Obsidian upgrades have one place to fix.
+
+## Canvas DOM sync
+
+Canvas re-creates node DOM and only renders while the view is visible, while our
+card state lives in node data. Keep these two in sync without patching Obsidian:
+
+- The single source of truth is `node.getData().canvasCard`; the `.canvas-cards-card`
+  class and the corner button are derived, not stored.
+- `CanvasBinding` re-applies derived state from data on: node DOM mutations
+  (`MutationObserver`), a `30 ms` timer scheduled by `scheduleApply()`, and
+  `plugin.applyAppearance()`.
+- Data changes that do not touch the DOM (undo/redo shortcuts and the canvas toolbar)
+  are caught by per-document capture listeners: `keydown` Ctrl/Cmd+Z/Y and
+  `pointerup` inside `.canvas-wrapper` → `plugin.scheduleCanvasRefresh(...)`.
+- Never use `requestAnimationFrame` for this refresh: Obsidian pauses rAF in a
+  hidden/background window, so the refresh would silently stop.
+- Pop-out windows are separate documents: every canvas leaf's `ownerDocument` gets
+  the click listeners (see `ensureDocumentListeners`), so cards work there too.
 
 ## Submission rules that are easy to violate
 

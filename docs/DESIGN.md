@@ -1,7 +1,7 @@
 # Canvas Cards — Obsidian 画布卡片插件设计文档
 
-> 版本：v1.2（2026-10-19）
-> 状态：**实现完成（v0.2.0）**；M0–M6 全部完成，v1.0 八项验收 + v1.1 三项功能均通过，证据见 `docs/VERIFICATION.md`
+> 版本：v1.3（2026-10-19）
+> 状态：**实现完成（v0.2.0，发布前复审通过）**；M0–M6 全部完成，v1.0 八项验收 + v1.1 三项功能均通过，复审修复见 `docs/VERIFICATION.md` §2.2
 > 目标：在 Obsidian Canvas 中提供"只显示标题的卡片，点击后弹窗查看/编辑正文"的组件。
 
 ---
@@ -54,6 +54,7 @@
 | D22 | 正文搜索 | 全局搜索面板不集成（Canvas 索引只索引 `node.text`，改 caches 不影响匹配；patch 搜索类会破坏预览）。v1.1 提供独立"搜索卡片正文"命令 + Modal：扫描 `.canvas` 解析卡片，按标题/正文模糊匹配，选中后定位画布并打开卡片弹窗 |
 | D23 | 导出为笔记 | 命令 + 右键菜单，把卡片导出为与画布同目录的唯一命名 `.md`：YAML frontmatter 记录来源画布/节点 id/导出时间，正文写入标题与 Markdown 正文；不移动、不删除原卡片 |
 | D24 | 缩略图 | 正文中第一个图片嵌入（`![[img]]` / `![alt](img)`）解析为卡片封面：`nodeEl` 设 `--canvas-cards-thumb`，CSS 深色渐变 + `cover` 铺满，标题白色左下；设置项 `showThumbnails` 可关；非图片嵌入/无法解析时不显示 |
+| D25 | 数据/DOM 同步 | 数据是唯一事实源，外观从 `canvasCard` 派生：`CanvasBinding` 用 `MutationObserver` + 30ms 定时器刷新（不用 rAF）；撤销/重做等纯数据变化由按 document 的 `Ctrl/Cmd+Z/Y` 与 `.canvas-wrapper` `pointerup` 捕获兜底；pop-out 每个 document 独立注册监听 |
 
 ---
 
@@ -247,9 +248,10 @@ styles.css
 
 ### 5.3 生命周期与多画布
 
-- Canvas 视图创建：监听 `layout-change` / `active-leaf-change`，对每个 canvas view 建立独立 `ViewBinding`（DOM 容器、节点反查表、observer、捕获监听）。
-- 节点 DOM 变动：视图容器上 `MutationObserver`（rAF/50ms 防抖）+ 事件委托，避免逐节点监听；节点重建后幂等补类。
-- 视图关闭：断开 observer、移除捕获监听、移除类名，释放绑定。
+- Canvas 视图创建：监听 `layout-change` / `active-leaf-change`，配合 `onLayoutReady` 对每个 canvas leaf 建立独立 `CanvasBinding`（DOM 容器、节点反查表、observer、捕获监听）；pop-out 窗口的每个 `ownerDocument` 各注册一套点击监听（`boundDocuments` 去重）。
+- 节点 DOM 变动：视图容器上 `MutationObserver`（childList/subtree）+ **30ms 定时器** `scheduleApply()`（不用 rAF：隐藏/后台窗口会暂停 rAF，刷新会静默失效）；节点重建后幂等补类。
+- 数据变化不触发 DOM 的情况（撤销/重做、工具栏操作、外部写入）：按 document 捕获 `Ctrl/Cmd+Z/Y` 与 `.canvas-wrapper` 内 `pointerup` → `scheduleCanvasRefresh()`；弹窗保存/设置变更调 `applyAppearance()` 重刷。
+- 视图关闭：断开 observer、清除定时器、移除捕获监听、移除类名，释放绑定。
 - 插件卸载：移除捕获监听、移除所有 `canvas-cards-card` 类与角落按钮；静态 `styles.css` 随插件禁用自动卸载；本插件不 patch 任何原型方法，无需还原 patch。
 - 异常隔离：任何绑定失败只影响本插件功能，不得让 Canvas 报错或丢数据（try/catch + 日志 + 功能降级）。
 

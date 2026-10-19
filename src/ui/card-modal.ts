@@ -2,6 +2,7 @@ import { App, Component, MarkdownRenderer, Modal, Notice, normalizePath, Scope, 
 import type CanvasCards from '../main';
 import { getCardTitle, readCard, writeCard, writeCardTitle } from '../canvas/card';
 import type { CanvasLike, CanvasNodeLike } from '../canvas/internals';
+import { getNodeData, isLiveNode } from '../canvas/internals';
 import { t } from '../i18n';
 
 export interface CardModalOptions {
@@ -45,6 +46,9 @@ export class CardModal extends Modal {
 	private statusEl!: HTMLElement;
 	private pasteHandler: ((evt: ClipboardEvent) => void) | null = null;
 	private extraScope: Scope | null = null;
+	/** Node id captured at open time; lets autosave find the live node after a rebuild. */
+	private readonly nodeId: string;
+	private closed = false;
 	/** Owns components created by the rendered Markdown (embeds, links, ...). */
 	private readonly renderHost = new Component();
 
@@ -53,6 +57,7 @@ export class CardModal extends Modal {
 		this.options = options;
 		this.mode = options.startInEdit ? 'edit' : 'read';
 		this.body = readCard(options.node)?.body ?? '';
+		this.nodeId = getNodeData(options.node)?.id ?? options.node.id ?? '';
 	}
 
 	onOpen(): void {
@@ -88,6 +93,7 @@ export class CardModal extends Modal {
 	}
 
 	onClose(): void {
+		this.closed = true;
 		if (this.extraScope) {
 			this.app.keymap.popScope(this.extraScope);
 			this.extraScope = null;
@@ -109,6 +115,13 @@ export class CardModal extends Modal {
 			} catch (error) {
 				console.error('Canvas Cards: failed to push the edit snapshot', error);
 			}
+		}
+		// Data-only changes (new body, new cover image) are not visible to the
+		// binding's MutationObserver; refresh the card look right away.
+		try {
+			this.options.plugin.applyAppearance();
+		} catch (error) {
+			console.error('Canvas Cards: failed to refresh the card look', error);
 		}
 		this.renderHost.unload();
 		if (this.pasteHandler) this.editorEl.removeEventListener('paste', this.pasteHandler);
@@ -254,6 +267,7 @@ export class CardModal extends Modal {
 	private flushBody(): void {
 		this.clearBodyTimer();
 		if (!this.bodyDirty) return;
+		if (!this.resolveLiveTarget()) return;
 		try {
 			const saved = writeCard(
 				this.options.node,
@@ -270,6 +284,19 @@ export class CardModal extends Modal {
 		}
 	}
 
+	/** Re-resolves the node if the canvas tab was rebuilt/closed while open. */
+	private resolveLiveTarget(): boolean {
+		if (isLiveNode(this.options.canvas, this.options.node)) return true;
+		const live = this.options.plugin.locateLiveCard(this.options.sourcePath, this.nodeId);
+		if (!live) {
+			console.warn('Canvas Cards: card no longer exists; keeping the draft unsaved');
+			return false;
+		}
+		this.options.node = live.node;
+		this.options.canvas = live.canvas;
+		return true;
+	}
+
 	private onTitleInput(): void {
 		this.titleDirty = true;
 		this.titleEdited = true;
@@ -283,6 +310,7 @@ export class CardModal extends Modal {
 	private flushTitle(): void {
 		this.clearTitleTimer();
 		if (!this.titleDirty) return;
+		if (!this.resolveLiveTarget()) return;
 		try {
 			if (writeCardTitle(this.options.node, this.options.canvas, this.titleInput.value)) {
 				this.titleDirty = false;
@@ -343,8 +371,20 @@ export class CardModal extends Modal {
 			} catch {
 				// Fall back to the vault root when attachments are misconfigured.
 			}
+			if (this.closed) return;
 			const buffer = await file.arrayBuffer();
+			if (this.closed) return;
 			await this.app.vault.createBinary(path, buffer);
+			if (this.closed) {
+				// The dialog was closed while the attachment was being written: the
+				// body no longer exists, so do not leave an orphaned image behind.
+				try {
+					await this.app.vault.adapter.remove(path);
+				} catch (error) {
+					console.error('Canvas Cards: failed to remove an unused attachment', error);
+				}
+				return;
+			}
 			const name = path.split('/').pop() ?? filename;
 			this.insertAtCursor(`![[${name}]]`);
 			new Notice(t('noticeImageInserted'));
@@ -355,6 +395,7 @@ export class CardModal extends Modal {
 	}
 
 	private insertAtCursor(text: string): void {
+		if (this.closed) return;
 		const editor = this.editorEl;
 		const start = editor.selectionStart;
 		const end = editor.selectionEnd;

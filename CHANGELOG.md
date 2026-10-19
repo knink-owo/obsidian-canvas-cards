@@ -23,8 +23,26 @@ All notable changes to **Canvas Cards** are documented here. The format follows
 - Body autosaves no longer leave a stale Canvas undo snapshot that could silently
   drop the body when undoing an earlier canvas action; closing the popup now pushes
   one session-level history snapshot instead.
-- The file explorer could appear empty after the plugin wrote to a search input; the
-  search test was narrowed to the plugin popup (does not affect card data).
+- Card appearance, corner button and cover thumbnail now refresh when node data
+  changes without a DOM update (Canvas undo/redo, toolbar actions, external writes).
+- Cards now work in pop-out windows: click handles are registered per document.
+- Title edits no longer push a Canvas history snapshot on every debounce pause.
+- Closing the popup cancels pending image-paste writes and removes attachments that
+  were created after it closed.
+- Canvas-only commands are disabled while a note (not a canvas) is the active leaf.
+- The UI language follows the Obsidian language even when the OS locale differs.
+- "Jump to card" waits for a deferred canvas view instead of opening a duplicate tab.
+- The popup re-resolves the live node before writing, so edits survive a canvas rebuild.
+- Thumbnail detection scans all image embeds and uses the earliest one in the body
+  (a `[[note]]` embed before the image no longer hides the cover).
+- The fullscreen toolbar button now updates its icon and accessible label, and
+  in-flight body searches no longer render after the search popup is closed.
+
+### Changed
+
+- `minAppVersion` raised to 1.14.4, the oldest version this release was tested on.
+- README licence corrected to 0BSD; added a GitHub Actions release workflow, a
+  `.gitignore` for local research files and this changelog.
 
 ## 0.1.0
 

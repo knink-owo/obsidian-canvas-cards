@@ -103,6 +103,8 @@ export function writeCardTitle(
 	} else {
 		return false;
 	}
-	canvas?.requestSave?.();
+	// Title edits are debounced; do not push one Canvas history snapshot per pause.
+	// The dialog pushes a single session snapshot on close instead.
+	canvas?.requestSave?.(false);
 	return true;
 }

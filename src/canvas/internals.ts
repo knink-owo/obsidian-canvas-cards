@@ -54,6 +54,7 @@ export interface CanvasLike {
 export interface CanvasViewLike {
 	canvas?: CanvasLike;
 	file?: TFile | null;
+	containerEl?: HTMLElement;
 }
 
 /** Returns the Canvas view for a leaf, or null when the leaf is not a loaded Canvas view. */
@@ -87,4 +88,48 @@ export function findNodeByElement(
 
 export function isTextNode(node: CanvasNodeLike | null | undefined): boolean {
 	return getNodeData(node)?.type === 'text';
+}
+
+/** Converts client coordinates to canvas coordinates; null when unavailable. */
+export function canvasPointFromClient(
+	canvas: CanvasLike | null | undefined,
+	point: { x: number; y: number },
+): { x: number; y: number } | null {
+	if (!canvas?.posFromClient) return null;
+	try {
+		const result = canvas.posFromClient(point);
+		if (!result || typeof result.x !== 'number' || typeof result.y !== 'number') return null;
+		return result;
+	} catch {
+		return null;
+	}
+}
+
+/** Renders a node that was created with `save:false`/`focus:false` into the canvas DOM. */
+export function attachAndRenderNode(node: CanvasNodeLike | null | undefined): void {
+	if (!node?.attach || !node.render) return;
+	try {
+		if (node.nodeEl?.isConnected) return;
+		node.attach();
+		node.render();
+	} catch {
+		// Canvas will render the node on the next layout pass; never let this throw.
+	}
+}
+
+/** True while the node object is still the live node of that canvas instance. */
+export function isLiveNode(
+	canvas: CanvasLike | null | undefined,
+	node: CanvasNodeLike | null | undefined,
+): boolean {
+	if (!canvas?.nodes || !node?.id) return false;
+	return canvas.nodes.get(node.id) === node;
+}
+
+/** Finds the current node object for an id on a canvas. */
+export function getNodeById(
+	canvas: CanvasLike | null | undefined,
+	id: string,
+): CanvasNodeLike | null {
+	return canvas?.nodes?.get(id) ?? null;
 }

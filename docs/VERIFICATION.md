@@ -1,6 +1,6 @@
 # Canvas Cards — 验收与验证记录
 
-版本：**0.2.0**（v1.0 完成定义 + v1.1 三项增强，见 `docs/DESIGN.md` §7.2）
+版本：**0.2.0（发布前复审后的最终产物）**（v1.0 完成定义 + v1.1 三项增强，见 `docs/DESIGN.md` §7.2）
 验证日期：2026-10-19
 验证人：自动化 + 人工复核（DeepSeek Harness 会话）
 
@@ -28,10 +28,12 @@
 
 | 文件 | 大小 | 说明 |
 |---|---|---|
-| `main.js` | 33,681 B | CJS bundle，仅 `require("obsidian")`，无绝对路径 / vault 名 / 网络 URL；sha256 `5B37E497…D640F15`（发布前复审修复后重新构建） |
+| `main.js` | 36,051 B | CJS bundle，仅 `require("obsidian")`，无绝对路径 / vault 名 / 网络 URL；sha256 `5E44904C…5B6EA52A`（发布前代码复审修复后的最终构建） |
 | `manifest.json` | 257 B | id=canvas-cards，version=0.2.0，minAppVersion=1.14.4（实际测试过的最低版本），isDesktopOnly=true |
-| `styles.css` | 8,935 B | 卡片外观 + 角落按钮 + 缩略图封面 + 弹窗/搜索样式 |
+| `styles.css` | 8,935 B | 卡片外观 + 角落按钮 + 缩略图封面 + 弹窗/搜索样式；sha256 `B623A35F…D69D6AD` |
 | `data.json`（运行时生成） | 99 B | `{"appearance":"minimal","trigger":"click","showThumbnails":true,"showStatus":true}` |
+
+部署校验：`D:\Obsidian\all-in-one\.obsidian\plugins\canvas-cards\main.js` 与仓库构建产物 sha256 一致（`5E44904C…B6EA52A`）；`app.plugins.disablePlugin` + `enablePlugin` 重载后 `loaded=true`、version 0.2.0、bindings=1。
 
 ---
 
@@ -55,6 +57,22 @@
 | 9 | "搜索卡片正文"能用正文里的词命中卡片，并跳转到所属画布打开该卡片 | ✅ | 命令 `canvas-cards:search-cards` 打开搜索弹窗；输入正文独有的"风险与阻塞"→ 状态"共 1 张卡片"、结果为"项目会议要点 / Canvas Cards 测试"；点击结果后活动叶切到测试画布、卡片被选中、卡片弹窗以阅读模式打开；截图 `docs/assets/card-search.png` |
 | 10 | "导出为笔记"生成同目录笔记，frontmatter 记录来源画布与节点 id，正文完整 | ✅ | 选中卡片执行 `canvas-cards:export-card` → 画布同目录生成 `项目会议要点.md`，frontmatter `canvas-cards-source: "[[Canvas Cards 测试.canvas]]"`、`canvas-cards-node: "733d0e2cfb1550c3"`（YAML 转义）、`exported`；正文含 `# 标题` 与完整 Markdown；测试后已删除该导出文件 |
 | 11 | 正文含图片嵌入的卡片显示封面缩略图；`showThumbnails` 关闭后恢复纯标题卡片 | ✅ | 临时卡片正文 `![[fig-01.png]]` → `nodeEl` 加 `canvas-cards-has-thumb`、`--canvas-cards-thumb` 为资源 URL、容器 `background-image` 为渐变+封面、标题白色左下；`showThumbnails=false` 后类与背景移除，恢复后重新出现；截图 `docs/assets/card-thumbnail.png`；测试卡片已从画布删除 |
+
+### 2.2 发布前复审修复验证（代码评审 + 文档评审）
+
+| # | 复审发现 | 修复 | 验证 |
+|---|---|---|---|
+| 1 | P1：纯数据变化（撤销/重做、外部写入）后卡片 DOM 不刷新，类名/角落按钮/缩略图停滞 | `CanvasBinding.scheduleApply()` 改为 30ms 定时器；每个 document 捕获 `Ctrl/Cmd+Z/Y` 与 `.canvas-wrapper` 内 `pointerup` → `scheduleCanvasRefresh()` | 计划 `plan-fix-g`：改数据为 `card:false` 后触发 pointerup，节点类由 `canvas-node canvas-cards-card` 正确变为 `canvas-node` |
+| 2 | P2：pop-out 窗口里卡片点击/角落按钮无响应（只监听了主 document） | `ensureDocumentListeners()` 按 canvas leaf 的 `ownerDocument` 各注册一套监听，`boundDocuments` 去重 | `plan-fix-l`：pop-out 打开测试画布后 `boundDocuments` 1→2，pop-out 内 2 个节点带 `canvas-cards-card` 类与角落按钮 |
+| 3 | P2：标题防抖每次停顿都往 Canvas 历史推一次快照 | `writeCardTitle()` 改 `canvas.requestSave(false)`；弹窗关闭时统一 `requestSave(true)` 一次（D21 会话快照） | 构建后人工冒烟：改标题→关闭→一次 Ctrl+Z 整步回退，正文/标题一起回退 |
+| 4 | P2：弹窗关闭后仍在跑的粘贴图片任务可能写入过期节点 | `closed` 标志贯穿 `insertImage`/`insertAtCursor`；关闭后删除已创建附件（`vault.adapter.remove`） | 代码复核 + 构建；粘贴流程在编辑模式下仍正常插入 `![[...]]` |
+| 5 | P2：命令在 Home 笔记激活时仍作用于后台画布 | `getActiveCanvas()` 只取 `getMostRecentLeaf()`，后台画布不回退 | 两标签（canvas + Home.md）实测：Home 激活时 `getActiveCanvas()===null`，执行 `uncard` 后卡片仍为 `card:true` |
+| 6 | P2：英文 Obsidian + 中文系统时 UI 显示中文 | `usesChinese()` 优先 `moment.locale()`，为空才回退 `navigator.language` | 构建通过；中文环境仍为中文（既有截图未变） |
+| 7 | P2：deferred canvas 视图未加载时 `revealCard` 找不到 leaf 而重复开标签 | `revealCard` 遍历 canvas leaves 先 `await leaf.loadIfDeferred()` 再取 `view.canvas` | 搜索跳转回归：命中卡片后切到测试画布并打开弹窗（`docs/assets/card-search.png`） |
+| 8 | P2：弹窗持有过期 canvas/node 引用（画布重建后写入丢失） | 弹窗记录 `nodeId`，写入前 `resolveLiveTarget()` + `plugin.locateLiveCard()` 解析当前活节点 | `rebuildView()` 往返后弹窗编辑仍写入成功（历史验证 + 代码复核） |
+| 9 | 缩略图正则 `/g` 的 lastIndex 残留；只看首个 wiki 嵌入，笔记链接在前时取不到图片 | 改用 `matchAll` 扫描全部 wiki/markdown 图片嵌入并取正文中最早的一张 | `plan-fix-k`：正文 `[[Home]]` 在前、`![[fig-01.png]]` 在后 → 仍显示封面（`docs/assets/card-thumbnail.png`） |
+| 10 | 弹窗全屏按钮图标/aria 不随状态变化；在途搜索在关闭后回填结果 | 全屏按钮同步 `maximize/minimize` 图标与 aria；搜索 `searchToken` + `activeQuery` 失效在途请求 | 全屏回归：class 含 `canvas-cards-fullscreen`、aria 变“退出全屏”；搜索 `review-marker`/`验收清单` 均 1 条结果 |
+| 11 | 文档/发布 MUST：README 许可证错误、非 git 仓库、无 release 流水线、`.tmp-research` 未忽略、minAppVersion 未实测 | README 改 0BSD；`git init` + 提交；新增 `.github/workflows/release.yml`；`.gitignore` 增 `.tmp-research/`；minAppVersion 1.14.4（实测基线） | `pnpm run build`/`lint` 通过；release workflow 校验 tag==manifest.version 后上传三件套；仓库提交见 §6 |
 
 ---
 
@@ -118,15 +136,19 @@
 13. 选中一张卡片 → 右键"导出为笔记"（或命令 `Export card to note`）→ 画布同目录出现同名 `.md`，frontmatter 含来源画布与节点 id。
 14. 给卡片正文首行加 `![[fig-01.png]]` 并重新打开画布 → 卡片显示图片封面；关闭设置"显示缩略图"后恢复纯标题卡片。
 15. 设置 → 缩略图开关/打开方式等切换后无需重启，立即生效。
+16. 取消一张卡片后按 Ctrl+Z（画布聚焦）→ 节点恢复卡片外观；再 Ctrl+Shift+Z → 再变回普通文本节点（撤销/重做后外观不滞后）。
+17. 把画布标签拖到独立窗口（pop-out）→ 卡片外观、角落按钮、点击弹窗均正常。
 
 ---
 
 ## 6. 相关文档与截图
 
 - 设计：`docs/DESIGN.md`（决策 D1–D24、数据模型、交互、架构、里程碑、风险）
-- M0 运行时勘察：`docs/research/m0-runtime-notes.md`
+- 变更记录：`CHANGELOG.md`
+- M0 运行时勘察：`docs/research/m0-runtime-notes.md`（含 §13 DOM/数据刷新机制）
 - Obsidian 内部机制勘察：`docs/research/canvas-internals-local.md`
 - 生态竞品调研：`docs/research/canvas-card-prior-art.md`
+- 发布前代码/文档评审：见 §2.2 与 git 提交记录
 - 截图：`docs/assets/`
   - `cards-canvas.png` — 画布上的卡片
   - `card-modal.png` — 弹窗阅读模式

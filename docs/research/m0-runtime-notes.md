@@ -151,3 +151,25 @@ overrideHistory() // requestPushHistory.run(); data=getData(); history.replace(d
 - **踩坑**：正文自动保存若一直 `requestSave(false)`，历史快照停留在正文修改前；用户之后撤销更早的画布操作（拖拽/新建）会恢复旧快照，**正文被静默回滚**（实测 Ctrl+Z 与 Ctrl+Shift+Z 都会丢 marker 文本）。
 - **最终方案（D21）**：正文编辑期间 `requestSave(false)`；弹窗关闭时若有内容变更，统一 `canvas.requestSave(true)` 一次 → 一次编辑会话 = 一个撤销步；之后撤销更早操作不会丢正文。
 - 实测：编辑正文保存 → 关闭 → Ctrl+Z 回到编辑前 → Ctrl+Shift+Z 重做；再拖拽节点 → Ctrl+Z 只回退位置、正文保留；`copy-card-body` 剪贴板原文正确。
+
+## 13. DOM 与数据刷新机制（复审修复后的最终形态）
+
+Canvas 只在自身渲染/重建时写 DOM；`node.setData()` 这类纯数据变更**不会**触发节点重渲染，
+因此卡片的派生外观（`.canvas-cards-card` 类、角落按钮、缩略图背景）必须由插件在数据变化后重新应用。
+
+- 唯一数据源：`node.getData().canvasCard`；DOM 类/角标/背景都是从它派生。
+- `CanvasBinding` 的刷新触发点：`MutationObserver`（childList/subtree）、`scheduleApply()`
+  调度的 **30ms 定时器**、以及 `plugin.applyAppearance()`（设置变更、弹窗保存后）。
+- 不碰 DOM 的数据变化（`Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z`、工具栏撤销/重做）由**按 document 注册**
+  的捕获监听兜底：`keydown` 命中 Ctrl/Cmd+Z/Y（且非输入态）、`pointerup` 落在 `.canvas-wrapper`
+  内 → `plugin.scheduleCanvasRefresh(...)`。
+- **不要用 requestAnimationFrame 做刷新**：实测 CDP 下 `document.hidden=true` 时 rAF 完全暂停
+  （rafRan=0 / timerRan=1），刷新链路会静默失效；改为 `setTimeout` 后稳定。
+- pop-out 窗口是独立 document：`syncBindings()` 对每个 canvas leaf 的 `ownerDocument` 注册一套
+  监听（`boundDocuments` 去重），卡片与角落按钮在 pop-out 中同样生效；关闭/重建 leaf 时
+  `registerDomEvent` 随插件卸载清理。
+- 节点生命周期：`createTextNode({save:false,focus:false})` 后需 `node.attach(); node.render()`；
+  `rebuildView()` / 重新打开画布会重建节点对象，弹窗用 `plugin.locateLiveCard(sourcePath, nodeId)`
+  在写入前解析当前活节点，避免写进过期引用。
+- 缩略图缓存 key = `${nodeId}:${canvasCard.updated}`，正文保存后 `updated` 变化 → 自然重新解析；
+  设置开关或外部数据变更走 `applyAppearance()` 强制刷新。

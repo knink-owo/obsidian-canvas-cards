@@ -6,7 +6,15 @@ import { createCardData, isCardNode, readCard, writeCard } from './canvas/card';
 import { CardIndex } from './canvas/card-index';
 import { exportCardToNote } from './canvas/export';
 import type { CanvasLike, CanvasNodeLike, CanvasViewLike } from './canvas/internals';
-import { getCanvasNodes, getCanvasView, getNodeData, isTextNode } from './canvas/internals';
+import {
+	attachAndRenderNode,
+	canvasPointFromClient,
+	getCanvasNodes,
+	getCanvasView,
+	getNodeById,
+	getNodeData,
+	isTextNode,
+} from './canvas/internals';
 import { t } from './i18n';
 import {
 	DEFAULT_SETTINGS,
@@ -46,6 +54,7 @@ export default class CanvasCards extends Plugin {
 
 	private readonly bindings = new Map<WorkspaceLeaf, CanvasBinding>();
 	private readonly openModals = new Set<CardModal>();
+	private readonly boundDocuments = new Set<Document>();
 	private pointerStart: { x: number; y: number } | null = null;
 	private unloading = false;
 	/** Vault-wide card index used by search (built from plain `.canvas` JSON). */
@@ -62,12 +71,51 @@ export default class CanvasCards extends Plugin {
 		this.registerEvent(this.app.workspace.on('layout-change', () => this.syncBindings()));
 		this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.syncBindings()));
 
-		this.registerDomEvent(document, 'pointerdown', this.handlePointerDown, { capture: true });
-		this.registerDomEvent(document, 'click', this.handleClick, { capture: true });
-		this.registerDomEvent(document, 'dblclick', this.handleDoubleClick, { capture: true });
-
+		this.ensureDocumentListeners(document);
 		this.registerCardMenu();
 		this.registerCommands();
+	}
+
+	/**
+	 * Registers the click/keyboard listeners on a document. Main window and every
+	 * pop-out window that holds a canvas get their own set (Obsidian leaves can be
+	 * moved to pop-out windows, where the main `document` never sees the events).
+	 */
+	private ensureDocumentListeners(doc: Document): void {
+		if (this.boundDocuments.has(doc)) return;
+		this.boundDocuments.add(doc);
+		this.registerDomEvent(doc, 'pointerdown', this.handlePointerDown, { capture: true });
+		this.registerDomEvent(doc, 'click', this.handleClick, { capture: true });
+		this.registerDomEvent(doc, 'dblclick', this.handleDoubleClick, { capture: true });
+		this.registerDomEvent(doc, 'pointerup', this.handleGlobalPointerUp, { capture: true });
+		this.registerDomEvent(doc, 'keydown', this.handleGlobalKeyDown, { capture: true });
+	}
+
+	/** Canvas undo/redo (keyboard or toolbar) changes node data without touching the DOM. */
+	private handleGlobalKeyDown = (evt: KeyboardEvent): void => {
+		if (evt.defaultPrevented) return;
+		if (!evt.ctrlKey && !evt.metaKey) return;
+		const key = evt.key.toLowerCase();
+		if (key !== 'z' && key !== 'y') return;
+		const target = evt.target;
+		if (target instanceof HTMLElement && target.closest('input, textarea, .cm-editor, [contenteditable="true"]')) {
+			return;
+		}
+		this.scheduleCanvasRefresh(140);
+	};
+
+	private handleGlobalPointerUp = (evt: PointerEvent): void => {
+		const target = evt.target;
+		if (!(target instanceof Element)) return;
+		// Toolbar actions (undo/redo, add card) live inside the canvas wrapper.
+		if (target.closest('.canvas-wrapper')) this.scheduleCanvasRefresh(80);
+	};
+
+	private scheduleCanvasRefresh(delay: number): void {
+		window.setTimeout(() => {
+			if (this.unloading) return;
+			for (const binding of this.bindings.values()) binding.scheduleApply();
+		}, delay);
 	}
 
 	onunload(): void {
@@ -121,13 +169,23 @@ export default class CanvasCards extends Plugin {
 				this.bindings.delete(leaf);
 				continue;
 			}
+			this.ensureViewDocumentListeners(view);
 			binding.refresh();
 		}
 		for (const leaf of leaves) {
 			if (this.bindings.has(leaf)) continue;
-			if (!getCanvasView(leaf)) continue;
+			const view = getCanvasView(leaf);
+			if (!view) continue;
+			this.ensureViewDocumentListeners(view);
 			this.bindings.set(leaf, new CanvasBinding(this, leaf));
 		}
+	}
+
+	/** Pop-out windows own their own document; listeners must live there too. */
+	private ensureViewDocumentListeners(view: CanvasViewLike): void {
+		const container = view.containerEl;
+		const doc = container?.ownerDocument;
+		if (doc && doc !== document) this.ensureDocumentListeners(doc);
 	}
 
 	// ------------------------------------------------------------- hit testing
@@ -215,6 +273,22 @@ export default class CanvasCards extends Plugin {
 		this.openCardForNode(hit.node, hit.canvas, hit.binding.leaf, false);
 	}
 
+	/**
+	 * Resolves the current node object for a card, e.g. after the canvas tab was
+	 * rebuilt while a dialog was open. Returns null when the card no longer exists.
+	 */
+	locateLiveCard(sourcePath: string, nodeId: string): { node: CanvasNodeLike; canvas: CanvasLike } | null {
+		if (!nodeId) return null;
+		for (const binding of this.bindings.values()) {
+			if (getCanvasView(binding.leaf)?.file?.path !== sourcePath) continue;
+			const canvas = binding.canvas;
+			if (!canvas) continue;
+			const node = getNodeById(canvas, nodeId);
+			if (node) return { node, canvas };
+		}
+		return null;
+	}
+
 	private openCardForNode(
 		node: CanvasNodeLike,
 		canvas: CanvasLike,
@@ -248,9 +322,20 @@ export default class CanvasCards extends Plugin {
 	 * Used by the card-body search.
 	 */
 	async revealCard(file: TFile, nodeId: string): Promise<void> {
-		let leaf = this.app.workspace
-			.getLeavesOfType('canvas')
-			.find((candidate) => getCanvasView(candidate)?.file?.path === file.path);
+		let leaf: WorkspaceLeaf | null = null;
+		for (const candidate of this.app.workspace.getLeavesOfType('canvas')) {
+			if (candidate.isDeferred) {
+				try {
+					await candidate.loadIfDeferred();
+				} catch (error) {
+					console.error('Canvas Cards: failed to load a deferred canvas tab', error);
+				}
+			}
+			if (getCanvasView(candidate)?.file?.path === file.path) {
+				leaf = candidate;
+				break;
+			}
+		}
 		if (!leaf) {
 			leaf = this.app.workspace.getLeaf('tab');
 			await leaf.openFile(file);
@@ -309,14 +394,13 @@ export default class CanvasCards extends Plugin {
 	// ---------------------------------------------------------------- commands
 
 	private getActiveCanvas(): CanvasContext | null {
-		const activeLeaf = this.app.workspace.getMostRecentLeaf();
-		const leaves = this.app.workspace.getLeavesOfType('canvas');
-		const ordered = activeLeaf ? [activeLeaf, ...leaves.filter((leaf) => leaf !== activeLeaf)] : leaves;
-		for (const leaf of ordered) {
-			const view = getCanvasView(leaf);
-			if (view && view.canvas) return { leaf, canvas: view.canvas, view };
-		}
-		return null;
+		// Commands must not act on a background canvas: only the most recent leaf
+		// counts, so switching to a note disables the canvas-only commands.
+		const leaf = this.app.workspace.getMostRecentLeaf();
+		if (!leaf) return null;
+		const view = getCanvasView(leaf);
+		if (!view?.canvas) return null;
+		return { leaf, canvas: view.canvas, view };
 	}
 
 	private getSelection(canvas: CanvasLike): CanvasNodeLike[] {
@@ -338,16 +422,18 @@ export default class CanvasCards extends Plugin {
 		const wrapper = canvas.wrapperEl;
 		const size = DEFAULT_CARD_SIZE;
 		let pos = { x: 0, y: 0 };
-		if (wrapper && canvas.posFromClient) {
+		if (wrapper) {
 			const rect = wrapper.getBoundingClientRect();
-			const center = canvas.posFromClient({
+			const center = canvasPointFromClient(canvas, {
 				x: rect.x + rect.width / 2,
 				y: rect.y + rect.height / 2,
 			});
-			pos = {
-				x: center.x - size.width / 2,
-				y: center.y - size.height / 2,
-			};
+			if (center) {
+				pos = {
+					x: center.x - size.width / 2,
+					y: center.y - size.height / 2,
+				};
+			}
 		}
 		// Nudge away from nodes that already cover the viewport centre, so two
 		// cards created in a row do not land exactly on top of each other.
@@ -375,10 +461,7 @@ export default class CanvasCards extends Plugin {
 			return;
 		}
 		writeCard(node, canvas, createCardData());
-		if (node.nodeEl && !node.nodeEl.isConnected) {
-			node.attach?.();
-			node.render?.();
-		}
+		attachAndRenderNode(node);
 		canvas.selectOnly?.(node);
 		canvas.requestSave?.();
 		this.syncBindings();
