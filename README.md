@@ -35,6 +35,9 @@ open it.
 - **Commands and context menu** — create, convert selected text nodes, cancel a
   card, edit a body, copy a body and export a card, from the command palette or the
   node context menu. Works next to Advanced Canvas menu items.
+- **Add a card from the canvas menu** — right-click empty canvas space and pick
+  **Add card** (appended to the native create menu) to create an empty card with its
+  top-left corner at the pointer and start editing its body.
 - **Bilingual UI** — English and Chinese follow Obsidian's language.
 - **Graceful degradation** — the body lives in a normal node field
   (`canvasCard`), so a card opened in a vault without the plugin is just a text
@@ -83,6 +86,7 @@ stays inside the `.canvas` files and is never deleted by the plugin.
 | Action | How |
 | --- | --- |
 | Create a card in the viewport center | Command **Create card** |
+| Create a card where you right-clicked | Right-click empty canvas space → *Add card* |
 | Convert selected text nodes to cards | Command **Convert selection to cards**, or node context menu → *Convert to card* |
 | Open a card body | Click the card title or its corner button (or command **Edit card body**, or context menu → *Edit card*) |
 | Rename a card | Open the popup and edit the title field |
@@ -160,8 +164,10 @@ a card only flips `card` to `false` and keeps `body`. Advanced Canvas' own field
 - Cards cannot be moved between vaults without the plugin to re-attach the look;
   the data itself travels with the `.canvas` file.
 - The plugin uses a small, documented set of Canvas internals (not public API); see
-  `AGENTS.md` for the allowlist and constraints. It does not patch Canvas prototypes,
-  so a Canvas update is unlikely to break saving or interaction.
+  `AGENTS.md` for the allowlist and constraints. The only prototype patch is the
+  saved-original wrap of the canvas creation menu used by **Add card**; it is
+  idempotent and restored when the plugin unloads, so disabling the plugin returns
+  the native menu.
 
 ## Support
 
@@ -233,7 +239,7 @@ walkthrough is [Submit your plugin](https://docs.obsidian.md/plugins/releasing/s
 
 - `docs/DESIGN.md` — decisions, data model, interaction spec, milestones.
 - `docs/research/m0-runtime-notes.md` — runtime probes of Canvas internals.
-- `docs/VERIFICATION.md` — acceptance evidence for v0.2.0 (v1.0 acceptance + v1.1 features).
+- `docs/VERIFICATION.md` — acceptance evidence for v0.3.0 (v1.0 acceptance, v1.1 features, v0.2.0 review fixes and the v0.3.0 canvas-menu addition).
 
 ## License
 

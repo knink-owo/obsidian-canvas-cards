@@ -65,7 +65,10 @@ Allowed accesses (only from `src/canvas/**`, never from `ui/**`):
   canvas view was restored lazily (deferred views).
 - `canvas.nodes` (Map), `canvas.selection`, `canvas.selectOnly(node)`,
   `canvas.zoomToSelection()`, `canvas.createTextNode(...)`, `canvas.requestSave()`,
-  `canvas.posFromClient(point)`, `canvas.wrapperEl`.
+  `canvas.posFromClient(point)`, `canvas.wrapperEl`, `canvas.readonly`.
+- `canvas.showCreationMenu(menu, pos, size)` — the single allowed prototype patch
+  (D26): saved-original wrap, one wrap per prototype, restored in `onunload` only
+  while our wrapper is still installed.
 - `node.nodeEl`, `node.getData()`, `node.setData()`, `node.setText()`,
   `node.attach()`, `node.render()`, `node.isEditing`, `node.x/y/width/height`.
 - Text-node DOM class names used only for hit-testing/CSS: `.canvas-node`,
@@ -77,9 +80,10 @@ Constraints:
 
 - Never `setData` a hand-built object: always spread `node.getData()` first, so
   Advanced Canvas fields (`styleAttributes`, `toFloating`, …) survive.
-- Do not patch Obsidian prototypes/methods in v1. If a monkey-patch ever becomes
-  necessary, it must use `monkey-around`, be registered for unload, and be
-  documented here first.
+- Do not patch Obsidian prototypes/methods, except the single documented
+  `canvas.showCreationMenu` wrap (D26). A patch must be saved-original, idempotent
+  per prototype (`Map` guard), restored in `onunload` only while our wrapper is
+  still installed, and documented here first.
 - Feature-detect every private shape (`leaf.view?.canvas`, `typeof node?.getData`)
   and degrade gracefully; a missing/changed internal must never throw into Canvas
   or lose vault data.

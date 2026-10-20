@@ -173,3 +173,17 @@ Canvas 只在自身渲染/重建时写 DOM；`node.setData()` 这类纯数据变
   在写入前解析当前活节点，避免写进过期引用。
 - 缩略图缓存 key = `${nodeId}:${canvasCard.updated}`，正文保存后 `updated` 变化 → 自然重新解析；
   设置开关或外部数据变更走 `applyAppearance()` 强制刷新。
+
+## 14. 画布空白右键菜单（v0.3.0 补充实测）
+
+- 空白处右键**不会**触发 `canvas:selection-menu`（该事件只在已有选区时触发；探针 `selEvents=0`）；
+  菜单由 `Canvas.onContextMenu(e)` 内部直接 `canvas.showCreationMenu(menu, pos, size)` 构建，
+  随后才追加撤销/粘贴/快速设置项，整条链路没有 workspace 事件。
+- 原生创建菜单 section 为 `create`：添加文本 / 添加笔记 / 添加媒体文件 / 添加网页 / 创建分组；
+  `menu.addItem(...setSection('create'))` 追加的项会排在"创建分组"之后（实测顺序符合预期）。
+- 实现：saved-original 包裹 `Object.getPrototypeOf(canvas).showCreationMenu`；
+  `creationMenuPatches: Map<prototype, {original, wrapped}>` 幂等 guard（每个原型只包一次）；
+  `onunload` 仅在 `target.showCreationMenu === wrapped` 时还原，避免误还原他人 patch。
+- 点击"添加卡片"用菜单回调的 `pos` 作为新卡片左上角（`createTextNode({pos})` 的 pos 即左上角），
+  实测节点 rect 与右键点重合；创建后走既有 `createCardAt` 路径（进入编辑态）。
+- 还原验证：禁用插件后同一空白右键菜单恢复原生 10 项（无"添加卡片"）；重新启用后再次出现。

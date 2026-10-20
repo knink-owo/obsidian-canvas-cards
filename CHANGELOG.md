@@ -4,6 +4,19 @@ All notable changes to **Canvas Cards** are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/).
 
+## 0.3.0
+
+### Added
+
+- **Add card from the canvas menu** — right-click empty canvas space and choose
+  *Add card* (appended to the native *Add text / Add note / Add media / Add web /
+  Create group* section). The new empty card's top-left corner starts at the pointer
+  and its editor opens immediately.
+- The canvas menu integration is the plugin's only prototype patch: it wraps the
+  canvas creation menu method with the saved original, is idempotent per prototype,
+  and is restored when the plugin unloads (disabling the plugin returns the native
+  menu).
+
 ## 0.2.0
 
 ### Added

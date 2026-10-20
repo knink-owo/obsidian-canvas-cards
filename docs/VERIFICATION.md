@@ -1,7 +1,7 @@
 # Canvas Cards — 验收与验证记录
 
-版本：**0.2.0（发布前复审后的最终产物）**（v1.0 完成定义 + v1.1 三项增强，见 `docs/DESIGN.md` §7.2）
-验证日期：2026-10-19
+版本：**0.3.0**（v1.0 完成定义 + v1.1 三项增强 + v0.3.0 画布空白右键菜单，见 `docs/DESIGN.md` §7.2）
+验证日期：2026-10-20
 验证人：自动化 + 人工复核（DeepSeek Harness 会话）
 
 ---
@@ -28,12 +28,12 @@
 
 | 文件 | 大小 | 说明 |
 |---|---|---|
-| `main.js` | 36,051 B | CJS bundle，仅 `require("obsidian")`，无绝对路径 / vault 名 / 网络 URL；sha256 `5E44904C…5B6EA52A`（发布前代码复审修复后的最终构建） |
-| `manifest.json` | 257 B | id=canvas-cards，version=0.2.0，minAppVersion=1.14.4（实际测试过的最低版本），isDesktopOnly=true |
+| `main.js` | 37,663 B | CJS bundle，仅 `require("obsidian")`，无绝对路径 / vault 名 / 网络 URL；sha256 `0D6175F5…C3E1A5D`（v0.3.0 画布菜单实现后的最终构建） |
+| `manifest.json` | 302 B | id=canvas-cards，version=0.3.0，minAppVersion=1.14.4（实际测试过的最低版本），authorUrl，isDesktopOnly=true |
 | `styles.css` | 8,935 B | 卡片外观 + 角落按钮 + 缩略图封面 + 弹窗/搜索样式；sha256 `B623A35F…D69D6AD` |
 | `data.json`（运行时生成） | 99 B | `{"appearance":"minimal","trigger":"click","showThumbnails":true,"showStatus":true}` |
 
-部署校验：`D:\Obsidian\all-in-one\.obsidian\plugins\canvas-cards\main.js` 与仓库构建产物 sha256 一致（`5E44904C…B6EA52A`）；`app.plugins.disablePlugin` + `enablePlugin` 重载后 `loaded=true`、version 0.2.0、bindings=1。
+部署校验：`D:\Obsidian\all-in-one\.obsidian\plugins\canvas-cards\main.js` 与仓库构建产物 sha256 一致（`0D6175F5…C3E1A5D`）；`app.plugins.loadManifests()` + `disablePlugin`/`enablePlugin` 重载后 `loaded=true`、version 0.3.0、bindings=1。
 
 ---
 
@@ -74,6 +74,12 @@
 | 10 | 弹窗全屏按钮图标/aria 不随状态变化；在途搜索在关闭后回填结果 | 全屏按钮同步 `maximize/minimize` 图标与 aria；搜索 `searchToken` + `activeQuery` 失效在途请求 | 全屏回归：class 含 `canvas-cards-fullscreen`、aria 变“退出全屏”；搜索 `review-marker`/`验收清单` 均 1 条结果 |
 | 11 | 文档/发布 MUST：README 许可证错误、非 git 仓库、无 release 流水线、`.tmp-research` 未忽略、minAppVersion 未实测 | README 改 0BSD；`git init` + 提交；新增 `.github/workflows/release.yml`；`.gitignore` 增 `.tmp-research/`；minAppVersion 1.14.4（实测基线） | `pnpm run build`/`lint` 通过；release workflow 校验 tag==manifest.version 后上传三件套；仓库提交见 §6 |
 
+### 2.3 v0.3.0 画布空白右键菜单验证
+
+| # | 验收标准 | 结果 | 证据 |
+|---|---|---|---|
+| 12 | 画布空白处右键菜单出现"添加卡片"，点击后在右键坐标创建空卡片并进入编辑；禁用插件后菜单恢复原生，重新启用后重新生效 | ✅ | 空白右键菜单项为 `[添加文本, 添加笔记, 添加媒体文件, 添加网页, 创建分组, 添加卡片, 撤销, 粘贴, 对齐网格, 对齐物体, 只读]`；点击"添加卡片"（client 796,439）→ 新节点 `canvasCard{card:true}`、类 `canvas-node canvas-cards-card is-focused`、rect 左上角 795.99,439.04（300×96，与右键点对齐）、弹窗以编辑模式打开；`disablePlugin` 后同一菜单恢复原生 10 项（无"添加卡片"，证明 onunload 还原原型）；重新启用后菜单再次含"添加卡片"（幂等 guard 生效，同一原型只包裹一次）；截图 `docs/assets/canvas-menu-add-card.png`、`docs/assets/canvas-menu-created.png`；测试卡片已删除、画布恢复 0 节点 |
+
 ---
 
 ## 3. 功能逐项验证
@@ -103,6 +109,7 @@
 | 搜索卡片正文 | 扫描全部 `.canvas` 的 `canvasCard`，按标题/正文匹配；结果片段、↑/↓/Enter、点击跳转定位 | ✅ |
 | 导出为笔记 | 同目录唯一命名 `.md`，frontmatter（来源画布/节点 id/时间）+ 标题 + 正文 | ✅ |
 | 缩略图封面 | 正文首图 `![[...]]` / `![](...)` 解析为封面；设置项开关即时生效 | ✅ |
+| 画布空白菜单添加卡片 | 空白右键 → "添加卡片"：以右键点为左上角创建 300×96 空卡片并打开编辑弹窗；禁用/启用插件后菜单项正确还原/恢复 | ✅ |
 
 ---
 
@@ -116,6 +123,7 @@
 6. **Publish 不支持 Canvas**：与插件无关，Obsidian 官方限制。
 7. **跨 vault 使用**：需在新 vault 中开启第三方插件（Obsidian 对全新 vault 的默认安全限制）。
 8. **未知字段安全性**：卡片数据作为未知字段随 `.canvas` 保存；若在无插件环境被其他工具整体重写，字段可能丢失（风险见 `docs/DESIGN.md` §8）。
+9. **唯一原型 patch**：为在画布空白右键菜单中加入"添加卡片"，插件对 `canvas.showCreationMenu` 做 saved-original 包裹（D26）；幂等、可还原，禁用插件后菜单立即恢复原生。其余 Canvas 交互均不 patch 原型。
 
 ---
 
@@ -138,12 +146,14 @@
 15. 设置 → 缩略图开关/打开方式等切换后无需重启，立即生效。
 16. 取消一张卡片后按 Ctrl+Z（画布聚焦）→ 节点恢复卡片外观；再 Ctrl+Shift+Z → 再变回普通文本节点（撤销/重做后外观不滞后）。
 17. 把画布标签拖到独立窗口（pop-out）→ 卡片外观、角落按钮、点击弹窗均正常。
+18. 画布空白处右键 → 菜单中出现"添加卡片"；点击 → 在右键位置出现空卡片并直接进入正文编辑（截图 `docs/assets/canvas-menu-add-card.png`）。
+19. 禁用插件 → 再右键空白处，菜单恢复为原生 10 项（无"添加卡片"）；重新启用 → "添加卡片"重新出现。
 
 ---
 
 ## 6. 相关文档与截图
 
-- 设计：`docs/DESIGN.md`（决策 D1–D24、数据模型、交互、架构、里程碑、风险）
+- 设计：`docs/DESIGN.md`（决策 D1–D26、数据模型、交互、架构、里程碑、风险）
 - 变更记录：`CHANGELOG.md`
 - M0 运行时勘察：`docs/research/m0-runtime-notes.md`（含 §13 DOM/数据刷新机制）
 - Obsidian 内部机制勘察：`docs/research/canvas-internals-local.md`
@@ -162,3 +172,5 @@
   - `after-restart.png` — 重启后恢复
   - `large-canvas.png` — 63 节点大画布（性能验证）
   - `portable-vault.png` — 复制到另一 vault 后可用
+  - `canvas-menu-add-card.png` — 画布空白右键菜单（含"添加卡片"）
+  - `canvas-menu-created.png` — 从菜单创建后的空卡片与编辑弹窗

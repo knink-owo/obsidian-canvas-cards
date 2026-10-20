@@ -56,6 +56,8 @@ export default class CanvasCards extends Plugin {
 	private readonly openModals = new Set<CardModal>();
 	private readonly boundDocuments = new Set<Document>();
 	private pointerStart: { x: number; y: number } | null = null;
+	/** Canvas prototypes whose creation menu has been wrapped, keyed by the original method. */
+	private readonly creationMenuPatches = new Map<object, { original: unknown; wrapped: unknown }>();
 	private unloading = false;
 	/** Vault-wide card index used by search (built from plain `.canvas` JSON). */
 	cardIndex!: CardIndex;
@@ -128,6 +130,7 @@ export default class CanvasCards extends Plugin {
 			}
 		}
 		this.openModals.clear();
+		this.restoreCreationMenuPatches();
 		for (const binding of this.bindings.values()) binding.destroy();
 		this.bindings.clear();
 	}
@@ -170,6 +173,7 @@ export default class CanvasCards extends Plugin {
 				continue;
 			}
 			this.ensureViewDocumentListeners(view);
+			if (view.canvas) this.ensureCreationMenuPatch(view.canvas);
 			binding.refresh();
 		}
 		for (const leaf of leaves) {
@@ -177,6 +181,7 @@ export default class CanvasCards extends Plugin {
 			const view = getCanvasView(leaf);
 			if (!view) continue;
 			this.ensureViewDocumentListeners(view);
+			if (view.canvas) this.ensureCreationMenuPatch(view.canvas);
 			this.bindings.set(leaf, new CanvasBinding(this, leaf));
 		}
 	}
@@ -419,9 +424,9 @@ export default class CanvasCards extends Plugin {
 
 	private createCardAtCenter(context: CanvasContext): void {
 		const canvas = context.canvas;
-		const wrapper = canvas.wrapperEl;
 		const size = DEFAULT_CARD_SIZE;
 		let pos = { x: 0, y: 0 };
+		const wrapper = canvas.wrapperEl;
 		if (wrapper) {
 			const rect = wrapper.getBoundingClientRect();
 			const center = canvasPointFromClient(canvas, {
@@ -435,7 +440,14 @@ export default class CanvasCards extends Plugin {
 				};
 			}
 		}
-		// Nudge away from nodes that already cover the viewport centre, so two
+		this.createCardAt(context, pos);
+	}
+
+	/** Creates an empty card whose top-left corner is at `pos` (canvas coordinates). */
+	private createCardAt(context: CanvasContext, pos: { x: number; y: number }): void {
+		const canvas = context.canvas;
+		const size = DEFAULT_CARD_SIZE;
+		// Nudge away from nodes that already cover the requested spot, so two
 		// cards created in a row do not land exactly on top of each other.
 		const nodes = getCanvasNodes(canvas);
 		for (let attempt = 0; attempt < 8; attempt += 1) {
@@ -613,6 +625,103 @@ export default class CanvasCards extends Plugin {
 				this.handleCanvasNodeMenu(menu, node);
 			}),
 		);
+	}
+
+	// ------------------------------------------------------- background menu
+
+	/**
+	 * Canvas shows the empty-space context menu by calling its private
+	 * `showCreationMenu(menu, pos, size)` method; it fires no workspace event
+	 * (`canvas:selection-menu` is not emitted for this path). The only way to add
+	 * an item there is wrapping that method: keep the original, restore it in
+	 * onunload, never let our code throw into Canvas.
+	 */
+	private ensureCreationMenuPatch(canvas: CanvasLike): void {
+		const proto = Object.getPrototypeOf(canvas) as Record<string, unknown> | null;
+		if (!proto || this.creationMenuPatches.has(proto)) return;
+		const current = proto.showCreationMenu;
+		if (typeof current !== 'function') return;
+		const extendMenu = (canvas: CanvasLike, menu: Menu, position: unknown): void => {
+			if (this.unloading) return;
+			try {
+				const point =
+					position && typeof position === 'object'
+						? (position as { x?: unknown; y?: unknown })
+						: null;
+				this.decorateCreationMenu(
+					menu,
+					canvas,
+					point && typeof point.x === 'number' && typeof point.y === 'number'
+						? { x: point.x, y: point.y }
+						: null,
+				);
+			} catch (error) {
+				console.error('Canvas Cards: failed to extend the canvas menu', error);
+			}
+		};
+		const wrapped = function (
+			this: CanvasLike,
+			menu: Menu,
+			pos: { x: number; y: number },
+			size?: { width: number; height: number },
+		): void {
+			(current as (...args: unknown[]) => void).call(this, menu, pos, size);
+			extendMenu(this, menu, pos);
+		};
+		proto.showCreationMenu = wrapped;
+		this.creationMenuPatches.set(proto, { original: current, wrapped });
+	}
+
+	private decorateCreationMenu(
+		menu: Menu,
+		canvas: CanvasLike,
+		pos: { x: number; y: number } | null | undefined,
+	): void {
+		if (!(menu instanceof Menu)) return;
+		menu.addItem((item) =>
+			item
+				.setTitle(t('menuAddCard'))
+				.setIcon('id-card')
+				.setSection('create')
+				.onClick(() => this.createCardFromMenu(canvas, pos)),
+		);
+	}
+
+	private createCardFromMenu(
+		canvas: CanvasLike,
+		pos: { x: number; y: number } | null | undefined,
+	): void {
+		const leaf = this.findLeafForCanvas(canvas);
+		const view = leaf ? getCanvasView(leaf) : null;
+		if (!leaf || !view?.canvas) {
+			new Notice(t('noticeCreateFailed'));
+			return;
+		}
+		const point =
+			pos && typeof pos.x === 'number' && typeof pos.y === 'number'
+				? { x: pos.x, y: pos.y }
+				: { x: 0, y: 0 };
+		this.createCardAt({ leaf, canvas: view.canvas, view }, point);
+	}
+
+	private findLeafForCanvas(canvas: CanvasLike): WorkspaceLeaf | null {
+		for (const binding of this.bindings.values()) {
+			if (binding.canvas === canvas) return binding.leaf;
+		}
+		for (const leaf of this.app.workspace.getLeavesOfType('canvas')) {
+			if (getCanvasView(leaf)?.canvas === canvas) return leaf;
+		}
+		return null;
+	}
+
+	private restoreCreationMenuPatches(): void {
+		for (const [proto, patch] of this.creationMenuPatches) {
+			const target = proto as Record<string, unknown>;
+			if (target.showCreationMenu === patch.wrapped) {
+				target.showCreationMenu = patch.original;
+			}
+		}
+		this.creationMenuPatches.clear();
 	}
 
 	private handleCanvasNodeMenu(menu: Menu, node: CanvasNodeLike): void {

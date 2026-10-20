@@ -41,6 +41,7 @@ export interface CanvasNodeLike {
 }
 
 export interface CanvasLike {
+	readonly?: boolean;
 	wrapperEl?: HTMLElement;
 	nodes?: Map<string, CanvasNodeLike>;
 	selection?: Set<CanvasNodeLike>;

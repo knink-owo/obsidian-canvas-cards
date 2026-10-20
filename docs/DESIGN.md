@@ -1,7 +1,7 @@
 # Canvas Cards — Obsidian 画布卡片插件设计文档
 
-> 版本：v1.3（2026-10-19）
-> 状态：**实现完成（v0.2.0，发布前复审通过）**；M0–M6 全部完成，v1.0 八项验收 + v1.1 三项功能均通过，复审修复见 `docs/VERIFICATION.md` §2.2
+> 版本：v1.4（2026-10-20）
+> 状态：**实现完成（v0.3.0）**；M0–M7 全部完成，v1.0 八项验收 + v1.1 三项功能 + v0.3.0 画布空白右键菜单均通过，复审修复见 `docs/VERIFICATION.md` §2.2
 > 目标：在 Obsidian Canvas 中提供"只显示标题的卡片，点击后弹窗查看/编辑正文"的组件。
 
 ---
@@ -55,6 +55,7 @@
 | D23 | 导出为笔记 | 命令 + 右键菜单，把卡片导出为与画布同目录的唯一命名 `.md`：YAML frontmatter 记录来源画布/节点 id/导出时间，正文写入标题与 Markdown 正文；不移动、不删除原卡片 |
 | D24 | 缩略图 | 正文中第一个图片嵌入（`![[img]]` / `![alt](img)`）解析为卡片封面：`nodeEl` 设 `--canvas-cards-thumb`，CSS 深色渐变 + `cover` 铺满，标题白色左下；设置项 `showThumbnails` 可关；非图片嵌入/无法解析时不显示 |
 | D25 | 数据/DOM 同步 | 数据是唯一事实源，外观从 `canvasCard` 派生：`CanvasBinding` 用 `MutationObserver` + 30ms 定时器刷新（不用 rAF）；撤销/重做等纯数据变化由按 document 的 `Ctrl/Cmd+Z/Y` 与 `.canvas-wrapper` `pointerup` 捕获兜底；pop-out 每个 document 独立注册监听 |
+| D26 | 空白右键菜单加卡 | 画布空白处右键无 workspace 事件（`canvas:selection-menu` 只在已有选区时触发），菜单由 `canvas.showCreationMenu(menu, pos, size)` 构建 → 用 saved-original 方式包裹 `Object.getPrototypeOf(canvas).showCreationMenu`，在原生"创建分组"后追加"添加卡片"项；点击以右键点 `pos` 为左上角创建空卡片（300×96）并打开编辑弹窗；`Map<prototype>` 幂等 guard，`onunload` 仅在仍是自己的 wrapper 时还原（唯一原型 patch 例外，见 AGENTS.md） |
 
 ---
 
@@ -157,6 +158,8 @@
 
 节点右键菜单：追加上述"转为卡片/取消卡片/编辑正文/复制正文/导出为笔记"，与 Advanced Canvas 的菜单项并存。
 
+画布空白处右键菜单（v0.3.0，D26）：原生创建菜单（添加文本/添加笔记/添加媒体文件/添加网页/创建分组）之后追加"添加卡片"项，点击后在右键坐标处以左上角对齐新建空卡片并进入编辑；实现方式与还原约束见 §5.2 末段。
+
 ### 4.6 设置
 
 | 设置 | 默认 | 说明 |
@@ -212,7 +215,7 @@ styles.css
 
 ### 5.2 Canvas 接入机制（M0 运行时已验证）
 
-结论：**不需要 patch 序列化，也不需要 patch 任何原型方法**——Canvas 节点保留未知字段；点击用捕获阶段拦截；外观用 CSS 类 + 一个角落按钮。证据见 `docs/research/m0-runtime-notes.md`（CDP 实测）与 `docs/research/canvas-internals-local.md`（源码偏移）。
+结论：**不需要 patch 序列化，也不需要 patch 节点/渲染相关原型方法**——Canvas 节点保留未知字段；点击用捕获阶段拦截；外观用 CSS 类 + 一个角落按钮。**唯一例外**是画布空白右键菜单：`showCreationMenu` 无法通过事件扩展，采用 saved-original 包裹（见本节末段，D26）。证据见 `docs/research/m0-runtime-notes.md`（CDP 实测）与 `docs/research/canvas-internals-local.md`（源码偏移）。
 
 **数据读写（无需 patch）**
 
@@ -246,13 +249,20 @@ styles.css
 - 没有 `canvas:node-created/node-deleted`（源码确认），新节点/删除通过 MutationObserver 与命令路径处理。
 - 视图关闭/插件卸载：断开 observer、移除捕获监听、移除类名与角落按钮（样式是静态 `styles.css`，由 Obsidian 在禁用插件时自动卸载）。
 
+**画布空白右键菜单（唯一原型 patch 例外，D26）**
+
+- 空白处右键菜单由 `Canvas.onContextMenu(e)` 直接 `new Menu` → `canvas.showCreationMenu(menu, pos, size)` 生成，之后才追加撤销/粘贴/快速设置；整条链路**没有** workspace 事件（`canvas:selection-menu` 只在已有选区时触发，空白右键实测 `selEvents=0`）。
+- 做法：`ensureCreationMenuPatch(canvas)` 取 `Object.getPrototypeOf(canvas)`，用 `creationMenuPatches: Map<prototype, {original, wrapped}>` 幂等包裹 `showCreationMenu`：`wrapped.call(this, menu, pos, size)` 先执行原方法，再 `decorateCreationMenu(menu, canvas, pos)` 用 `menu.addItem(...setSection('create'))` 追加"添加卡片"；onClick 以 `pos` 为左上角调 `createCardAt({leaf, canvas, view}, pos)`（复用命令路径）。
+- 还原：`onunload()` 调 `restoreCreationMenuPatches()`，仅当 `target.showCreationMenu === wrapped` 时替换回 `original`，避免误还原其他插件的 patch；原型方法被外部替换时放弃还原并记日志。
+- 这是 AGENTS.md 明确允许的唯一 patch 例外；其余 Canvas 交互仍走"捕获阶段拦截 + CSS 类"。
+
 ### 5.3 生命周期与多画布
 
 - Canvas 视图创建：监听 `layout-change` / `active-leaf-change`，配合 `onLayoutReady` 对每个 canvas leaf 建立独立 `CanvasBinding`（DOM 容器、节点反查表、observer、捕获监听）；pop-out 窗口的每个 `ownerDocument` 各注册一套点击监听（`boundDocuments` 去重）。
 - 节点 DOM 变动：视图容器上 `MutationObserver`（childList/subtree）+ **30ms 定时器** `scheduleApply()`（不用 rAF：隐藏/后台窗口会暂停 rAF，刷新会静默失效）；节点重建后幂等补类。
 - 数据变化不触发 DOM 的情况（撤销/重做、工具栏操作、外部写入）：按 document 捕获 `Ctrl/Cmd+Z/Y` 与 `.canvas-wrapper` 内 `pointerup` → `scheduleCanvasRefresh()`；弹窗保存/设置变更调 `applyAppearance()` 重刷。
 - 视图关闭：断开 observer、清除定时器、移除捕获监听、移除类名，释放绑定。
-- 插件卸载：移除捕获监听、移除所有 `canvas-cards-card` 类与角落按钮；静态 `styles.css` 随插件禁用自动卸载；本插件不 patch 任何原型方法，无需还原 patch。
+- 插件卸载：移除捕获监听、移除所有 `canvas-cards-card` 类与角落按钮、还原 `showCreationMenu` 原型（唯一 patch 例外，见 §5.2 末段）；静态 `styles.css` 随插件禁用自动卸载。
 - 异常隔离：任何绑定失败只影响本插件功能，不得让 Canvas 报错或丢数据（try/catch + 日志 + 功能降级）。
 
 ### 5.4 与 Advanced Canvas 共存
@@ -284,6 +294,7 @@ styles.css
 | **M4 打磨 ✅** | 设置页、中英双语、极简/按钮外观、性能（63 节点） | 已通过：外观切换即时生效；63 节点 `apply()` ≈1.9ms、零干扰 |
 | **M5 验收与交付 ✅** | 八项验收清单、与 Advanced Canvas 共存验证、README/使用说明 | 已通过：见 `docs/VERIFICATION.md`；README + 截图就绪 |
 | **M6 v1.1 增强 ✅** | 搜索卡片正文、导出为笔记、首图缩略图 | 已通过：搜索"风险与阻塞"命中并跳转；导出笔记 frontmatter 正确；缩略图封面 + `showThumbnails` 开关生效（截图 `docs/assets/*`） |
+| **M7 v0.3.0 ✅** | 画布空白右键菜单"添加卡片" | 已通过：菜单在"创建分组"后出现"添加卡片"；点击后以右键坐标新建 300×96 空卡片并进入编辑；禁用插件菜单恢复原生（无该项）、重新启用后重新生效 |
 
 ---
 
@@ -312,6 +323,10 @@ v1.1 新增（已实测）：
 9. "搜索卡片正文"能用正文里的词命中卡片，并跳转到所属画布打开该卡片
 10. "导出为笔记"生成同目录笔记，frontmatter 记录来源画布与节点 id，正文完整
 11. 正文含图片嵌入的卡片显示封面缩略图；`showThumbnails` 关闭后恢复纯标题卡片
+
+v0.3.0 新增（已实测）：
+
+12. 画布空白处右键 → 菜单含"添加卡片"；点击后在该坐标新建空卡片并打开编辑弹窗；禁用/启用插件后菜单项正确还原/重新生效
 
 ### 7.3 纯函数单测
 
@@ -347,6 +362,7 @@ v1.1 新增（已实测）：
 6. ✅ `createTextNode` 签名：`{pos, size?, position?, text?, save?, focus?}`；默认尺寸 `canvas.config.defaultTextNodeDimensions`；`focus:false` 不进入编辑。
 7. ✅ 点击拦截：document 捕获阶段可行，拖拽/框选/双击均不被破坏（5px 位移守卫）。
 8. ✅ 外观：CSS 类方案可行；唯一 DOM 注入是角落按钮；节点 color 通过 `[class*='mod-canvas-color']` 保留（默认 `--canvas-color` 是灰色哨兵，不能直接当 fallback）。
+9. ✅ 空白右键菜单：`canvas:selection-menu` 在空白右键不触发；菜单由 `canvas.showCreationMenu(menu, pos, size)` 构建；saved-original 包裹 + `Map` 幂等 guard + `onunload` 条件还原均实测通过（禁用后菜单恢复原生，重新启用后重新出现"添加卡片"）。
 
 剩余为**实现期验证**（已在 v0.1.0 全部完成，证据见 `docs/VERIFICATION.md`）：
 - ✅ 弹窗全屏（92vw×92vh）与 Esc 两段式（先退全屏、再关闭）
