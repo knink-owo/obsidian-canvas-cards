@@ -114,6 +114,11 @@ card state lives in node data. Keep these two in sync without patching Obsidian:
 - `isDesktopOnly` must be present and accurate.
 - GitHub release tag must equal `manifest.json.version`, with `main.js`,
   `manifest.json` and `styles.css` attached.
+- Publishing goes through <https://community.obsidian.md> (Obsidian account, linked
+  GitHub account, Add plugin), **not** a pull request against
+  `obsidianmd/obsidian-releases` — that JSON is a mirror regenerated hourly from
+  the directory. Only the first submission is manual; later releases are picked
+  up from the GitHub release whose tag matches the manifest version.
 
 ## Verification before calling work done
 
