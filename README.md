@@ -183,11 +183,53 @@ Copy `main.js`, `manifest.json` and `styles.css` into
 `<vault>/.obsidian/plugins/canvas-cards/` and reload the plugin to test. UI and
 interaction changes must be verified in a running Obsidian instance.
 
-Releasing: bump the version with `pnpm version <patch|minor|major>`, push the tag,
-and let the `Release` GitHub workflow build and attach `main.js`, `manifest.json` and
-`styles.css` to the release.
+## Releasing
 
-More design material:
+1. Bump the version (`pnpm version patch`, or update `manifest.json`, `package.json`
+   and `versions.json` by hand) and commit all three version files together.
+2. Push a tag equal to the `manifest.json` version (no `v` prefix). `pnpm version`
+   creates a `v`-prefixed tag by default, so either tag by hand
+   (`git tag 0.3.0 && git push origin 0.3.0`) or delete the wrong tag before
+   pushing. A tag that does not match the manifest version fails the release job.
+3. The `.github/workflows/release.yml` workflow builds, lints, checks the tag, and
+   publishes the release; verify the artifacts instead of trusting the Actions tab,
+   which can lag or show a stale *queued* run:
+
+   ```bash
+   gh release download <version> -D /tmp/release-check
+   sha256sum main.js /tmp/release-check/main.js
+   ```
+
+4. Confirm `manifest.json` inside the release matches the repository one. Never edit
+   `versions.json` history: it is append-only, one entry per published version.
+
+## Publishing to the community directory
+
+Submissions no longer go through a pull request to `obsidianmd/obsidian-releases`:
+`community-plugins.json` there is a mirror regenerated hourly from
+[community.obsidian.md](https://community.obsidian.md), so a manual PR would be
+overwritten. The official flow is the directory website:
+
+1. Sign in at <https://community.obsidian.md> with an Obsidian account.
+2. Link the GitHub account that owns this repository; that is how ownership is
+   verified.
+3. Choose **Add plugin**, point it at `https://github.com/knink-owo/obsidian-canvas-cards`
+   and confirm the description.
+4. The directory reviews the `manifest.json` at the HEAD of the default branch
+   automatically. Fix whatever it reports, bump the version, publish a new GitHub
+   release — the directory picks the newest release up on its own. No further
+   submissions are needed after the first one.
+
+Before submitting, the repository must have `manifest.json`, `README.md` and
+`LICENSE` at its root, a release whose tag equals the manifest version with
+`main.js` / `manifest.json` / `styles.css` attached, a truthful `minAppVersion`, no
+`fundingUrl` unless donations are accepted, and description punctuation/length
+within the limits. The automated review enforces the
+[submission requirements](https://docs.obsidian.md/community-directory/submission-requirements-for-plugins)
+and the [developer policies](https://docs.obsidian.md/Developer+policies); the full
+walkthrough is [Submit your plugin](https://docs.obsidian.md/plugins/releasing/submit-plugin).
+
+## Documentation
 
 - `docs/DESIGN.md` — decisions, data model, interaction spec, milestones.
 - `docs/research/m0-runtime-notes.md` — runtime probes of Canvas internals.
